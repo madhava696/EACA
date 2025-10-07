@@ -1,13 +1,45 @@
+# ===========================
+# Web / Backend
+# ===========================
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 sqlalchemy==2.0.35
-
-opencv-python==4.10.0.84
-
-transformers==4.45.2
-torch==2.4.1
-scikit-learn==1.5.2
-
-numpy==2.1.1
-pandas==2.2.3
 python-multipart==0.0.12
+
+# ===========================
+# Data / ML
+# ===========================
+numpy==1.26.4
+pandas==2.2.3
+scikit-learn==1.5.2
+matplotlib==3.9.2
+
+# ===========================
+# Computer Vision / Face / Emotion Recognition
+# ===========================
+opencv-python==4.10.0.84
+opencv-contrib-python==4.10.0.84
+fer==22.5.0
+facenet-pytorch==2.6.0
+moviepy==1.0.3
+imageio==2.37.0
+imageio-ffmpeg==0.6.0
+proglog==0.1.12
+
+# ===========================
+# Deep Learning
+# ===========================
+torch==2.2.2+cpu --index-url https://download.pytorch.org/whl/cpu
+torchvision==0.17.2+cpu --index-url https://download.pytorch.org/whl/cpu
+tensorflow==2.17.0
+keras==2.15.0
+
+# ===========================
+# NLP / Transformers
+# ===========================
+transformers==4.45.2
+requests==2.32.3
+tqdm==4.67.1
+speechbrain==1.0.0
+pydub==0.25.1
+openai-whisper==20231117
