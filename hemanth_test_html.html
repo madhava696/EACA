@@ -1,0 +1,111 @@
+<!--
+<script>
+const codeInput = document.getElementById('codeInput');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const suggestionBtn = document.getElementById('suggestionBtn');
+const resultDiv = document.getElementById('result');
+const logList = document.getElementById('logList');
+
+let currentEmotion = 'neutral';
+let activeRobots = [];
+
+// You can keep local keywords as fallback
+const emotionKeywords = {
+  frustrated: ['error','bug','fix','stupid','hate','why',"doesn't work",'stuck','problem','issue','crash','fail'],
+  happy: ['success','finally','working','awesome','love','easy','done','complete','solved','perfect','great'],
+  curious: ['how','wonder','learn','what if','idea','maybe','explore','discover']
+};
+
+function createRobotElement() {
+  // ... keep existing robot creation code here ...
+}
+
+// NEW: Function to fetch emotion from backend
+async function fetchEmotionFromBackend(codeText) {
+  try {
+    const response = await fetch('http://localhost:5000/analyze-emotion', { // change URL to your backend
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: codeText })
+    });
+    if (!response.ok) throw new Error('Network response was not ok');
+    return await response.json(); // { emotion, emoji, message, suggestion }
+  } catch (err) {
+    console.error('Error fetching emotion:', err);
+    return null;
+  }
+}
+
+analyzeBtn.addEventListener('click', async () => {
+  const text = codeInput.value.trim();
+  resultDiv.innerHTML = '';
+
+  if(text === ''){
+    const container = document.createElement('div'); container.className='robot-reply fade-in';
+    container.appendChild(createRobotElement());
+    const bubble = document.createElement('div'); bubble.className='chat-bubble';
+    bubble.innerHTML=`<p>Please enter some code or comments first.</p>`;
+    container.appendChild(bubble);
+    resultDiv.appendChild(container);
+
+    suggestionBtn.disabled = true;
+    suggestionBtn.classList.add('cursor-not-allowed','bg-gray-700','text-gray-400');
+    suggestionBtn.classList.remove('bg-teal-500','hover:bg-teal-600','text-white');
+    return;
+  }
+
+  // Send to backend
+  let feedback = await fetchEmotionFromBackend(text);
+
+  // Fallback: use local keyword detection if backend fails
+  if(!feedback){
+    let detectedEmotion = 'neutral';
+    if(emotionKeywords.frustrated.some(k => text.toLowerCase().includes(k))) detectedEmotion='frustrated';
+    else if(emotionKeywords.happy.some(k => text.toLowerCase().includes(k))) detectedEmotion='happy';
+    else if(emotionKeywords.curious.some(k => text.toLowerCase().includes(k))) detectedEmotion='curious';
+
+    const emotionFeedback = {
+      frustrated: {emoji:'🤯', message:"Detected frustration.", suggestion:"Take a break."},
+      happy: {emoji:'🎉', message:"Detected happiness!", suggestion:"Keep up the momentum."},
+      curious: {emoji:'🤔', message:"Detected curiosity.", suggestion:"Experiment and learn!"},
+      neutral: {emoji:'💻', message:"Focused.", suggestion:"Keep going steadily."}
+    };
+
+    feedback = emotionFeedback[detectedEmotion];
+    currentEmotion = detectedEmotion;
+  } else {
+    currentEmotion = feedback.emotion;
+  }
+
+  const container = document.createElement('div'); container.className='robot-reply fade-in';
+  container.appendChild(createRobotElement());
+  const bubble = document.createElement('div'); bubble.className='chat-bubble';
+  bubble.innerHTML = `<p>${feedback.emoji} ${feedback.message}</p>`;
+  container.appendChild(bubble);
+  resultDiv.appendChild(container);
+
+  const logItem = document.createElement('li'); logItem.className='flex items-center gap-2';
+  logItem.innerHTML = `<span>${feedback.emoji}</span> <span class="capitalize">${currentEmotion}</span> <span class="text-gray-500 italic">(${new Date().toLocaleTimeString()})</span>`;
+  logList.prepend(logItem);
+
+  suggestionBtn.disabled = false;
+  suggestionBtn.classList.remove('cursor-not-allowed','bg-gray-700','text-gray-400');
+  suggestionBtn.classList.add('bg-teal-500','hover:bg-teal-600','text-white');
+});
+
+suggestionBtn.addEventListener('click',()=>{
+  const existing=document.getElementById('suggestion-block');
+  if(existing) existing.remove();
+  // You can reuse last feedback from backend
+  const feedback = { suggestion: `Try the suggestion for ${currentEmotion}` }; // optional: store full backend response
+  const container = document.createElement('div'); container.className='robot-reply fade-in';
+  container.id='suggestion-block';
+  container.appendChild(createRobotElement());
+  const bubble = document.createElement('div'); bubble.className='chat-bubble border-l-4 border-teal-400';
+  bubble.innerHTML = `<h3 class="font-semibold text-teal-300 mb-1 flex items-center gap-2"><i class="fas fa-lightbulb"></i> Suggestion:</h3><p>${feedback.suggestion}</p>`;
+  container.appendChild(bubble);
+  resultDiv.appendChild(container);
+});
+</script>
+
+-->
