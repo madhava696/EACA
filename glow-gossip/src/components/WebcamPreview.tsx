@@ -8,41 +8,52 @@ interface WebcamPreviewProps {
 }
 
 export const WebcamPreview = ({ enabled, backendUrl = '/video_feed' }: WebcamPreviewProps) => {
-  const videoRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [isActive, setIsActive] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+
+  useEffect(() => {
+    if (enabled && !stream) {
+      startWebcam();
+    } else if (!enabled && stream) {
+      stopWebcam();
+    }
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [enabled]);
 
   const startWebcam = async () => {
     try {
-      // Notify backend to activate webcam
-      await fetch(`${backendUrl}?active=true`);
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 },
+        audio: false,
+      });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
       setIsActive(true);
-    } catch (err) {
-      console.error('Error starting webcam:', err);
+    } catch (error) {
+      console.error('Error accessing webcam:', error);
       setIsActive(false);
     }
   };
 
-  const stopWebcam = async () => {
-    try {
-      // Notify backend to stop webcam
-      await fetch(`${backendUrl}?active=false`);
-      setIsActive(false);
-    } catch (err) {
-      console.error('Error stopping webcam:', err);
+  const stopWebcam = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
     }
+    setIsActive(false);
   };
-
-  useEffect(() => {
-    if (enabled && !isActive) {
-      startWebcam();
-    } else if (!enabled && isActive) {
-      stopWebcam();
-    }
-    return () => {
-      stopWebcam();
-    };
-  }, [enabled]);
 
   if (!enabled) return null;
 
@@ -54,18 +65,19 @@ export const WebcamPreview = ({ enabled, backendUrl = '/video_feed' }: WebcamPre
     >
       <div className="relative w-full h-full">
         {isActive ? (
-          <img
+          <video
             ref={videoRef}
-            src={`${backendUrl}?active=true`}
+            autoPlay
+            playsInline
+            muted
             className="w-full h-full object-cover"
-            alt="Webcam feed"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted">
             <VideoOff className="w-8 h-8 text-muted-foreground" />
           </div>
         )}
-
+        
         <div className="absolute top-2 right-2 flex gap-2">
           <Button
             size="icon"
@@ -73,7 +85,11 @@ export const WebcamPreview = ({ enabled, backendUrl = '/video_feed' }: WebcamPre
             className="w-8 h-8 opacity-80 hover:opacity-100"
             onClick={() => setIsExpanded(!isExpanded)}
           >
-            {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            {isExpanded ? (
+              <Minimize2 className="w-4 h-4" />
+            ) : (
+              <Maximize2 className="w-4 h-4" />
+            )}
           </Button>
           <Button
             size="icon"
@@ -87,7 +103,11 @@ export const WebcamPreview = ({ enabled, backendUrl = '/video_feed' }: WebcamPre
               }
             }}
           >
-            {isActive ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}
+            {isActive ? (
+              <VideoOff className="w-4 h-4" />
+            ) : (
+              <Video className="w-4 h-4" />
+            )}
           </Button>
         </div>
       </div>

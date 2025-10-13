@@ -1,4 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { ChatMessage } from '@/components/ChatMessage';
 import { TypingIndicator } from '@/components/TypingIndicator';
 import { EmotionIndicator } from '@/components/EmotionIndicator';
@@ -6,8 +8,11 @@ import { WebcamPreview } from '@/components/WebcamPreview';
 import { VoiceControls } from '@/components/VoiceControls';
 import { SettingsModal } from '@/components/SettingsModal';
 import { MessageInput } from '@/components/MessageInput';
-import { Bot } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Bot, User, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
+import { api } from '@/services/api';
+import { getLatestEmotion, setEmotion } from '@/services/emotionStorage';
 
 interface Message {
   id: string;
@@ -17,9 +22,10 @@ interface Message {
 }
 
 const STORAGE_KEY = 'emotion-aware-chat-history';
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
 
 const Index = () => {
+  const { user, isGuest, guestMessageCount, incrementGuestCount, logout } = useAuth();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [emotionDetection, setEmotionDetection] = useState(true);
@@ -57,6 +63,11 @@ const Index = () => {
   }, [textSize]);
 
   const sendMessage = async (content: string) => {
+    // Check guest limit
+    if (isGuest && !incrementGuestCount()) {
+      return;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -68,38 +79,37 @@ const Index = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: content,
-          history: messages,
-        }),
+      // Get current emotion from local storage
+      const emotion = getLatestEmotion();
+      
+      const response = await api.sendChatMessage({
+        message: content,
+        emotion: emotion,
       });
-
-      if (!response.ok) throw new Error('Failed to get response from backend');
-
-      const data = await response.json();
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.response || 'Sorry, I could not process your request.',
-        timestamp: Date.now(),
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
+      
+      if (response.reply) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: response.reply,
+          timestamp: Date.now(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } else {
+        throw new Error(response.error || 'Failed to get response');
+      }
     } catch (error) {
-      console.error('Backend error, using demo mode:', error);
-      toast.error('Failed to send message. Demo mode active.');
-
-      // Demo response
+      console.error('Error sending message:', error);
+      toast.error('Failed to send message. Using demo mode.');
+      
+      // Demo response for when backend is unavailable
       const demoResponse: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `I received your message: "${content}"\n\n**Demo Mode**: Backend connection unavailable.\n\n\`\`\`python\n# Example code snippet\ndef hello_world():\n    print("Hello, World!")\n\`\`\``,
+        content: `I received your message: "${content}"\n\n**Demo Mode**: Backend connection unavailable. This is a placeholder response to demonstrate the UI features.\n\n\`\`\`python\n# Example code snippet\ndef hello_world():\n    print("Hello, World!")\n\`\`\``,
         timestamp: Date.now(),
       };
-
+      
       setTimeout(() => {
         setMessages((prev) => [...prev, demoResponse]);
         setIsLoading(false);
@@ -115,19 +125,30 @@ const Index = () => {
     formData.append('audio', audioBlob, 'recording.wav');
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/voice`, {
+      const token = localStorage.getItem('jwt_token');
+      const response = await fetch('http://127.0.0.1:8000/api/voice', {
         method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Failed to process voice message');
+      if (!response.ok) {
+        throw new Error('Failed to process voice message');
+      }
 
       const data = await response.json();
-      if (data.text) sendMessage(data.text);
+      if (data.text) {
+        sendMessage(data.text);
+      }
     } catch (error) {
-      console.error('Voice processing unavailable:', error);
+      console.error('Error processing voice message:', error);
       toast.error('Voice processing unavailable');
     }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
   };
 
   const clearHistory = () => {
@@ -138,11 +159,11 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col relative overflow-hidden">
-      {/* Background gradients */}
+      {/* Animated background gradient */}
       <div className="fixed inset-0 bg-gradient-to-br from-primary/5 via-background to-accent/5 pointer-events-none" />
       <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent pointer-events-none" />
 
-      {/* Settings */}
+      {/* Settings Button */}
       <SettingsModal
         emotionDetection={emotionDetection}
         onEmotionDetectionChange={setEmotionDetection}
@@ -160,25 +181,48 @@ const Index = () => {
 
       {/* Header */}
       <header className="relative border-b border-border/50 backdrop-blur-xl">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/50 flex items-center justify-center glow-primary">
-              <Bot className="w-6 h-6 text-primary" />
+        <div className="max-w-5xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/50 flex items-center justify-center glow-primary">
+                <Bot className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  Emotion-Aware Coding Assistant
+                </h1>
+                <p className="text-xs text-muted-foreground">
+                  {isGuest 
+                    ? `Guest Mode: ${guestMessageCount}/20 messages` 
+                    : user?.email || 'AI-powered coding help'}
+                  {emotionDetection && ` • Emotion: ${getLatestEmotion()}`}
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                Emotion-Aware Coding Assistant
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                AI-powered coding help with emotion detection
-              </p>
+            <div className="flex items-center gap-2">
+              <VoiceControls onVoiceMessage={handleVoiceMessage} backendUrl="http://127.0.0.1:8000" />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate('/profile')}
+                title="Profile"
+              >
+                <User className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleLogout}
+                title="Logout"
+              >
+                <LogOut className="w-5 h-5" />
+              </Button>
             </div>
           </div>
-          <VoiceControls onVoiceMessage={handleVoiceMessage} backendUrl={BACKEND_URL} />
         </div>
       </header>
 
-      {/* Chat */}
+      {/* Chat Messages */}
       <main className="flex-1 relative overflow-hidden">
         <div className="h-full overflow-y-auto">
           <div className="max-w-5xl mx-auto px-4 py-6">
@@ -187,10 +231,12 @@ const Index = () => {
                 <div className="w-20 h-20 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center glow-primary animate-pulse-glow">
                   <Bot className="w-10 h-10 text-primary" />
                 </div>
-                <h2 className="text-2xl font-bold mb-2">Welcome to Your AI Coding Assistant</h2>
-                <p className="text-muted-foreground max-w-md">
-                  Ask me anything about coding, algorithms, or software development. I'm here to help! 🚀
-                </p>
+                <div>
+                  <h2 className="text-2xl font-bold mb-2">Welcome to Your AI Coding Assistant</h2>
+                  <p className="text-muted-foreground max-w-md">
+                    Ask me anything about coding, algorithms, or software development. I'm here to help! 🚀
+                  </p>
+                </div>
               </div>
             ) : (
               <>
@@ -205,7 +251,7 @@ const Index = () => {
         </div>
       </main>
 
-      {/* Input */}
+      {/* Message Input */}
       <footer className="relative border-t border-border/50 backdrop-blur-xl">
         <div className="max-w-5xl mx-auto px-4 py-4">
           <MessageInput onSendMessage={sendMessage} disabled={isLoading} />
