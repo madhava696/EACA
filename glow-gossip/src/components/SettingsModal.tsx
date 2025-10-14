@@ -1,3 +1,4 @@
+// glow-gossip/src/components/SettingsModal.tsx
 import { Settings, Moon, Sun, Type } from 'lucide-react';
 import {
   Dialog,

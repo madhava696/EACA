@@ -1,3 +1,4 @@
+// glow-gossip/src/components/MessageInput.tsx
 import { useState, KeyboardEvent } from 'react';
 import { Send } from 'lucide-react';
 import { Button } from './ui/button';

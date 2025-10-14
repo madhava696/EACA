@@ -1,3 +1,4 @@
+// glow-gossip/src/components/WebcamPreview.tsx
 import { useEffect, useRef, useState } from 'react';
 import { Video, VideoOff, Minimize2, Maximize2 } from 'lucide-react';
 import { Button } from './ui/button';

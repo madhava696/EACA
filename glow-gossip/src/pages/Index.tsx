@@ -11,7 +11,7 @@ import { MessageInput } from '@/components/MessageInput';
 import { Button } from '@/components/ui/button';
 import { Bot, User, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/services/api';
+import { api, streamChatMessage } from '@/services/api';
 import { getLatestEmotion, setEmotion } from '@/services/emotionStorage';
 
 interface Message {
@@ -19,6 +19,9 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  isTyping?: boolean;
+  emotion?: string;
+  provider?: string;
 }
 
 const STORAGE_KEY = 'emotion-aware-chat-history';
@@ -62,6 +65,7 @@ const Index = () => {
     document.documentElement.style.fontSize = `${textSize}px`;
   }, [textSize]);
 
+  // NEW: Streaming message handler
   const sendMessage = async (content: string) => {
     // Check guest limit
     if (isGuest && !incrementGuestCount()) {
@@ -82,6 +86,89 @@ const Index = () => {
       // Get current emotion from local storage
       const emotion = getLatestEmotion();
       
+      // Use streaming for real-time response
+      await handleStreamingMessage(content, emotion);
+      
+    } catch (error) {
+      console.error('Streaming error, falling back to regular chat:', error);
+      // Fallback to non-streaming
+      await handleRegularMessage(content, emotion);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // NEW: Streaming message handler
+  const handleStreamingMessage = async (content: string, emotion: string) => {
+    let fullResponse = '';
+    
+    // Add typing indicator
+    setMessages((prev) => [...prev, { 
+      id: 'typing', 
+      role: 'assistant', 
+      content: '', 
+      timestamp: Date.now(),
+      isTyping: true 
+    }]);
+    
+    try {
+      const stream = await streamChatMessage(content, emotion);
+      
+      // Remove typing indicator and add empty assistant message
+      setMessages((prev) => {
+        const newMessages = prev.filter(msg => msg.id !== 'typing');
+        return [...newMessages, { 
+          id: 'streaming', 
+          role: 'assistant', 
+          content: '', 
+          timestamp: Date.now(),
+          emotion,
+          provider: 'streaming'
+        }];
+      });
+      
+      // Process stream
+      for await (const chunk of stream) {
+        if (chunk.content) {
+          fullResponse += chunk.content;
+          
+          // Update the streaming message with new content
+          setMessages((prev) => {
+            const newMessages = prev.map(msg => 
+              msg.id === 'streaming' 
+                ? { ...msg, content: fullResponse, emotion: chunk.emotion_used || emotion, provider: chunk.provider || 'streaming' }
+                : msg
+            );
+            return newMessages;
+          });
+        }
+        
+        if (chunk.done) {
+          // Convert streaming message to permanent message
+          setMessages((prev) => {
+            const newMessages = prev.map(msg => 
+              msg.id === 'streaming' 
+                ? { 
+                    ...msg, 
+                    id: Date.now().toString(),
+                    isTyping: false 
+                  }
+                : msg
+            );
+            return newMessages;
+          });
+          break;
+        }
+      }
+    } catch (streamError) {
+      console.error('Streaming failed:', streamError);
+      throw streamError; // Re-throw to trigger fallback
+    }
+  };
+
+  // NEW: Regular message handler (fallback)
+  const handleRegularMessage = async (content: string, emotion: string) => {
+    try {
       const response = await api.sendChatMessage({
         message: content,
         emotion: emotion,
@@ -93,6 +180,8 @@ const Index = () => {
           role: 'assistant',
           content: response.reply,
           timestamp: Date.now(),
+          emotion: response.emotion_used,
+          provider: 'api'
         };
         setMessages((prev) => [...prev, assistantMessage]);
       } else {
@@ -108,15 +197,13 @@ const Index = () => {
         role: 'assistant',
         content: `I received your message: "${content}"\n\n**Demo Mode**: Backend connection unavailable. This is a placeholder response to demonstrate the UI features.\n\n\`\`\`python\n# Example code snippet\ndef hello_world():\n    print("Hello, World!")\n\`\`\``,
         timestamp: Date.now(),
+        emotion: emotion,
+        provider: 'demo'
       };
       
       setTimeout(() => {
         setMessages((prev) => [...prev, demoResponse]);
-        setIsLoading(false);
       }, 1500);
-      return;
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -241,9 +328,13 @@ const Index = () => {
             ) : (
               <>
                 {messages.map((msg) => (
-                  <ChatMessage key={msg.id} role={msg.role} content={msg.content} />
+                  <ChatMessage 
+                    key={msg.id} 
+                    role={msg.role} 
+                    content={msg.content} 
+                    isTyping={msg.isTyping}
+                  />
                 ))}
-                {isLoading && <TypingIndicator />}
               </>
             )}
             <div ref={messagesEndRef} />

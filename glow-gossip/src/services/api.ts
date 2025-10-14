@@ -31,6 +31,15 @@ export interface ChatRequest {
 export interface ChatResponse {
   reply: string;
   emotion_used: string;
+  provider?: string;
+}
+
+export interface StreamChunk {
+  content: string;
+  done: boolean;
+  emotion_used?: string;
+  provider?: string;
+  error?: boolean;
 }
 
 export interface ApiResponse<T = any> {
@@ -40,6 +49,7 @@ export interface ApiResponse<T = any> {
   error?: string;
   reply?: string;
   emotion_used?: string;
+  provider?: string;
 }
 
 class ApiService {
@@ -81,18 +91,6 @@ class ApiService {
     return response.json();
   }
 
-  async sendChatMessage(data: ChatRequest): Promise<ApiResponse<ChatResponse>> {
-    const response = await fetch(`${API_BASE_URL}/api/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.getAuthHeader(),
-      },
-      body: JSON.stringify(data),
-    });
-    return response.json();
-  }
-
   async updateProfile(data: UpdateProfileData): Promise<ApiResponse> {
     const response = await fetch(`${API_BASE_URL}/api/me`, {
       method: 'PATCH',
@@ -115,6 +113,90 @@ class ApiService {
     });
     return response.json();
   }
+
+  // Updated chat method with streaming support
+  async sendChatMessage(data: ChatRequest): Promise<ChatResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.getAuthHeader(),
+      },
+      body: JSON.stringify({
+        ...data,
+        history: [],
+        stream: false
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to send message');
+    }
+    
+    return response.json();
+  }
 }
+
+// Streaming function (standalone export)
+export const streamChatMessage = async (message: string, emotion: string = "neutral"): Promise<AsyncIterable<StreamChunk>> => {
+  const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message,
+      emotion,
+      history: [],
+      stream: true
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Stream request failed');
+  }
+
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+
+  if (!reader) {
+    throw new Error('No reader available');
+  }
+
+  return {
+    async *[Symbol.asyncIterator]() {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data.trim() === '') continue;
+
+              try {
+                const parsed = JSON.parse(data);
+                yield parsed;
+                
+                // Stop if we get a done signal
+                if (parsed.done) {
+                  return;
+                }
+              } catch (e) {
+                console.error('Error parsing SSE data:', e);
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    }
+  };
+};
 
 export const api = new ApiService();
