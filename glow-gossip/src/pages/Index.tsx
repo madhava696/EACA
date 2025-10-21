@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ChatMessage } from '@/components/ChatMessage';
 import { TypingIndicator } from '@/components/TypingIndicator';
 import { EmotionIndicator } from '@/components/EmotionIndicator';
+import { RobotAvatar } from '@/components/RobotAvatar';
 import { WebcamPreview } from '@/components/WebcamPreview';
 import { VoiceControls } from '@/components/VoiceControls';
 import { SettingsModal } from '@/components/SettingsModal';
@@ -13,6 +14,9 @@ import { Bot, User, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, streamChatMessage } from '@/services/api';
 import { getLatestEmotion, setEmotion } from '@/services/emotionStorage';
+
+type EmotionState = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'fearful' | 'disgusted';
+type BehaviorState = 'idle' | 'typing' | 'analyzing' | 'explaining' | 'celebrating' | 'thinking';
 
 interface Message {
   id: string;
@@ -34,6 +38,8 @@ const Index = () => {
   const [emotionDetection, setEmotionDetection] = useState(true);
   const [textSize, setTextSize] = useState(16);
   const [darkMode, setDarkMode] = useState(true);
+  const [robotEmotion, setRobotEmotion] = useState<EmotionState>('neutral');
+  const [robotBehavior, setRobotBehavior] = useState<BehaviorState>('idle');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Load chat history from localStorage
@@ -82,17 +88,22 @@ const Index = () => {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
+    // Get current emotion from local storage BEFORE try block
+    const emotion = getLatestEmotion();
+    setRobotEmotion(emotion as EmotionState);
+    setRobotBehavior('analyzing');
+
     try {
-      // Get current emotion from local storage
-      const emotion = getLatestEmotion();
-      
       // Use streaming for real-time response
       await handleStreamingMessage(content, emotion);
+      setRobotBehavior('celebrating');
+      setTimeout(() => setRobotBehavior('idle'), 2000);
       
     } catch (error) {
       console.error('Streaming error, falling back to regular chat:', error);
-      // Fallback to non-streaming
+      // Fallback to non-streaming - emotion is now accessible here
       await handleRegularMessage(content, emotion);
+      setRobotBehavior('idle');
     } finally {
       setIsLoading(false);
     }
@@ -174,18 +185,18 @@ const Index = () => {
         emotion: emotion,
       });
       
-      if (response.reply) {
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: response.reply,
-          timestamp: Date.now(),
-          emotion: response.emotion_used,
-          provider: 'api'
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
-      } else {
-        throw new Error(response.error || 'Failed to get response');
+    if (response.reply) {
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: response.reply,
+        timestamp: Date.now(),
+        emotion: response.emotion_used,
+        provider: 'api'
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    } else {
+      throw new Error('Failed to get response from backend');
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -249,6 +260,15 @@ const Index = () => {
       {/* Animated background gradient */}
       <div className="fixed inset-0 bg-gradient-to-br from-primary/5 via-background to-accent/5 pointer-events-none" />
       <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent pointer-events-none" />
+
+      {/* EACA-Bot Robot Avatar - Fixed position */}
+      <div className="fixed bottom-24 right-8 w-48 h-48 z-40 glass-effect rounded-2xl border-primary/30 p-2 animate-fade-in shadow-lg">
+        <RobotAvatar 
+          emotion={robotEmotion} 
+          behavior={robotBehavior}
+          isActive={isLoading}
+        />
+      </div>
 
       {/* Settings Button */}
       <SettingsModal
