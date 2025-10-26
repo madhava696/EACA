@@ -1,4 +1,11 @@
+// glow-gossip/src/services/api.ts
 const API_BASE_URL = 'http://127.0.0.1:8000';
+
+// Type definition for a single chat message object (used in history)
+export interface ChatMessagePart {
+  role: 'user' | 'bot' | 'system';
+  content: string;
+}
 
 export interface RegisterData {
   email: string;
@@ -23,9 +30,11 @@ export interface UpdateProfileData {
   secret_key?: string;
 }
 
+// *** CRITICAL CHANGE: HISTORY IS NOW IN THE REQUEST INTERFACE ***
 export interface ChatRequest {
   message: string;
   emotion: string;
+  history: ChatMessagePart[]; // Pass the full conversation history
 }
 
 export interface ChatResponse {
@@ -58,6 +67,7 @@ class ApiService {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
+  // --- Auth/Profile methods remain unchanged ---
   async register(data: RegisterData): Promise<ApiResponse> {
     const response = await fetch(`${API_BASE_URL}/api/register`, {
       method: 'POST',
@@ -114,7 +124,7 @@ class ApiService {
     return response.json();
   }
 
-  // Updated chat method with streaming support
+  // *** FIXED: Now accepts history and stream is implicitly FALSE ***
   async sendChatMessage(data: ChatRequest): Promise<ChatResponse> {
     const response = await fetch(`${API_BASE_URL}/api/chat`, {
       method: 'POST',
@@ -124,36 +134,47 @@ class ApiService {
       },
       body: JSON.stringify({
         ...data,
-        history: [],
-        stream: false
+        stream: false, // Ensure non-streaming API call
       }),
     });
     
+    // Improved error handling
     if (!response.ok) {
-      throw new Error('Failed to send message');
+      const errorText = await response.text();
+      throw new Error(`Failed to send message: ${response.status} - ${errorText}`);
     }
     
     return response.json();
   }
 }
 
-// Streaming function (standalone export)
-export const streamChatMessage = async (message: string, emotion: string = "neutral"): Promise<AsyncIterable<StreamChunk>> => {
+// *** FIXED: Now accepts history and correctly sets stream to TRUE ***
+export const streamChatMessage = async (
+    message: string, 
+    emotion: string = "neutral",
+    history: ChatMessagePart[] = [] // New required argument
+): Promise<AsyncIterable<StreamChunk>> => {
+  
   const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      // Auth header must be sent for streaming endpoint as well
+      'Authorization': localStorage.getItem('jwt_token') ? `Bearer ${localStorage.getItem('jwt_token')}` : '',
     },
     body: JSON.stringify({
       message,
       emotion,
-      history: [],
-      stream: true
+      history,      // Now passing the history
+      stream: true, // Now setting stream to true
     }),
   });
-
+  
+  // Improved error handling for stream failure
   if (!response.ok) {
-    throw new Error('Stream request failed');
+    const errorText = await response.text();
+    console.error('Stream failed response:', errorText);
+    throw new Error(`Stream request failed: ${response.status} - ${errorText}`);
   }
 
   const reader = response.body?.getReader();
@@ -180,9 +201,8 @@ export const streamChatMessage = async (message: string, emotion: string = "neut
 
               try {
                 const parsed = JSON.parse(data);
-                yield parsed;
+                yield parsed as StreamChunk; // Yield the parsed chunk
                 
-                // Stop if we get a done signal
                 if (parsed.done) {
                   return;
                 }
