@@ -1,78 +1,124 @@
-# backend/routers/emotion_face.py
-from fastapi import APIRouter, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel
 import cv2
+import numpy as np
+import base64
+import logging
 from backend.services.face_services import detect_emotions_from_array
-from typing import Optional
 
-router = APIRouter()
+router = APIRouter(prefix="/emotion_face", tags=["emotion_face"])
+logger = logging.getLogger("backend.emotion_face")
 
-# Initialize webcam as None. Will open only when requested.
-cap: Optional[cv2.VideoCapture] = None
+# Global webcam variable
+camera = None
+latest_emotion = {"emotion": "neutral", "confidence": 0.0}
 
-def generate_frames(gamma: float = 1.2, skip_frames: int = 2):
-    """Yield frames from webcam with emotion detection every few frames."""
-    global cap
-    if not cap or not cap.isOpened():
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            print("⚠️ Webcam not accessible")
-            return
 
-    frame_count = 0
-    current_faces = []
+# ------------------ MODELS ------------------
+class FrameData(BaseModel):
+    image: str  # Base64 encoded frame
 
+
+# ------------------ START DETECTION ------------------
+@router.get("/start")
+async def start_emotion_detection():
+    """Start webcam capture."""
+    global camera
+    if camera is None or not camera.isOpened():
+        camera = cv2.VideoCapture(0)
+        if not camera.isOpened():
+            raise HTTPException(status_code=500, detail="Failed to access webcam.")
+    return {"status": "started"}
+
+
+# ------------------ STREAM VIDEO ------------------
+def generate_stream():
+    """Stream MJPEG frames with emotion overlay."""
+    global camera, latest_emotion
+    while True:
+        if camera is None:
+            break
+        success, frame = camera.read()
+        if not success:
+            break
+
+        # Detect emotions
+        faces = detect_emotions_from_array(frame)
+        if faces:
+            top_face = max(faces, key=lambda f: f["score"])
+            latest_emotion = {
+                "emotion": top_face["dominant_emotion"],
+                "confidence": top_face["score"],
+            }
+
+            # Draw bounding box and emotion text
+            x, y, w, h = top_face["box"]
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.putText(
+                frame,
+                f"{latest_emotion['emotion']} ({latest_emotion['confidence']})",
+                (x, y - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (255, 255, 255),
+                2,
+            )
+
+        _, jpeg = cv2.imencode(".jpg", frame)
+        frame_bytes = jpeg.tobytes()
+
+        yield (
+            b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+        )
+
+
+@router.get("/stream")
+async def stream_video():
+    """Return live MJPEG stream."""
+    global camera
+    if camera is None:
+        raise HTTPException(status_code=400, detail="Camera not started.")
+    return StreamingResponse(generate_stream(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+# ------------------ FRAME EMOTION (Frontend polling) ------------------
+@router.get("/frame/latest")
+async def get_latest_emotion():
+    """Return latest detected emotion."""
+    return JSONResponse(latest_emotion)
+
+
+# ------------------ STOP DETECTION ------------------
+@router.get("/stop")
+async def stop_emotion_detection():
+    """Stop webcam and release resources."""
+    global camera
+    if camera and camera.isOpened():
+        camera.release()
+    camera = None
+    return {"status": "stopped"}
+
+
+# ------------------ FRAME ANALYSIS (Optional: for API POST image input) ------------------
+@router.post("/frame")
+async def analyze_frame(data: FrameData):
+    """Analyze a single frame from frontend (base64)."""
     try:
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+        image_data = base64.b64decode(data.image.split(",")[-1])
+        np_arr = np.frombuffer(image_data, np.uint8)
+        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-            # Run detection only every `skip_frames` frames
-            if frame_count % skip_frames == 0:
-                current_faces = detect_emotions_from_array(frame, gamma=gamma)
-            frame_count += 1
+        faces = detect_emotions_from_array(frame)
+        if not faces:
+            return {"emotion": "neutral", "confidence": 0.0}
 
-            for face in current_faces:
-                x, y, w, h = face["box"]
-                emotion = face["dominant_emotion"]
-                score = face["score"]
+        top_face = max(faces, key=lambda f: f["score"])
+        return {
+            "emotion": top_face["dominant_emotion"],
+            "confidence": top_face["score"]
+        }
 
-                # Draw rectangle & label
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                text = f"{emotion.upper()} ({score:.2f})"
-                text_x = x + w - 10 - (len(text) * 10)
-                text_y = max(y - 10, 20)
-                cv2.rectangle(frame, (text_x - 5, text_y - 25),
-                              (text_x + len(text) * 10, text_y + 5), (0, 255, 0), -1)
-                cv2.putText(frame, text, (text_x, text_y),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-
-            _, buffer = cv2.imencode('.jpg', frame)
-            frame_bytes = buffer.tobytes()
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-    finally:
-        stop_webcam()
-
-def stop_webcam():
-    """Stop and release the webcam."""
-    global cap
-    if cap and cap.isOpened():
-        cap.release()
-        cap = None
-        print("ℹ️ Webcam stopped.")
-
-@router.get("/video_feed")
-def video_feed(gamma: float = Query(1.2), active: bool = Query(True)):
-    """
-    Stream webcam feed with emotion detection.
-    - active=True: starts streaming
-    - active=False: stops webcam
-    """
-    if not active:
-        stop_webcam()
-        return {"message": "Webcam disabled."}
-
-    return StreamingResponse(generate_frames(gamma=gamma),
-                             media_type="multipart/x-mixed-replace; boundary=frame")
+    except Exception as e:
+        logger.error(f"Error analyzing frame: {e}")
+        raise HTTPException(status_code=500, detail=f"Emotion detection failed: {e}")

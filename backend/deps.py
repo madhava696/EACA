@@ -2,7 +2,7 @@
 from fastapi import Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.utils.database import get_db
-from backend.services.auth_service import decode_access_token
+from backend.services.auth_service import create_access_token
 from backend.models.user import User
 from sqlalchemy.future import select
 
@@ -17,7 +17,7 @@ async def get_current_user(authorization: str = Header(None), db: AsyncSession =
     if len(parts) != 2 or parts[0].lower() != "bearer":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authorization header")
     token = parts[1]
-    payload = decode_access_token(token)
+    payload = create_access_token(token)
     if not payload or "sub" not in payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     user_id = payload["sub"]

@@ -43,25 +43,33 @@ function RobotMesh({ emotion = 'neutral', behavior = 'idle', isActive = false }:
     if (!robotRef.current) return;
     const time = state.clock.getElapsedTime();
 
-    // Idle floating animation
+    // Map emotion to behavior for automatic animations
+    let activeBehavior = behavior;
     if (behavior === 'idle') {
+      if (emotion === 'happy') activeBehavior = 'celebrating';
+      else if (emotion === 'surprised') activeBehavior = 'analyzing';
+      else if (emotion === 'sad') activeBehavior = 'thinking';
+    }
+
+    // Idle floating animation
+    if (activeBehavior === 'idle') {
       robotRef.current.position.y = Math.sin(time * 0.5) * 0.1;
       robotRef.current.rotation.y = Math.sin(time * 0.3) * 0.1;
     }
 
     // Typing animation - head nod
-    if (behavior === 'typing' && headRef.current) {
+    if (activeBehavior === 'typing' && headRef.current) {
       headRef.current.rotation.x = Math.sin(time * 3) * 0.1;
     }
 
-    // Analyzing animation - head scanning
-    if (behavior === 'analyzing' && headRef.current) {
+    // Analyzing animation - head scanning (surprised)
+    if (activeBehavior === 'analyzing' && headRef.current) {
       headRef.current.rotation.y = Math.sin(time * 2) * 0.3;
       headRef.current.rotation.x = Math.sin(time * 1.5) * 0.15;
     }
 
     // Explaining animation - arm gestures
-    if (behavior === 'explaining') {
+    if (activeBehavior === 'explaining') {
       if (leftArmRef.current) {
         leftArmRef.current.rotation.z = Math.sin(time * 2) * 0.3 + 0.5;
       }
@@ -70,17 +78,18 @@ function RobotMesh({ emotion = 'neutral', behavior = 'idle', isActive = false }:
       }
     }
 
-    // Celebrating animation - jump and wave
-    if (behavior === 'celebrating') {
+    // Celebrating animation - jump and wave (happy)
+    if (activeBehavior === 'celebrating') {
       robotRef.current.position.y = Math.abs(Math.sin(time * 4)) * 0.3;
       if (rightArmRef.current) {
         rightArmRef.current.rotation.z = Math.sin(time * 8) * 0.5 - 0.8;
       }
     }
 
-    // Thinking animation - slow head tilt
-    if (behavior === 'thinking' && headRef.current) {
+    // Thinking animation - slow head tilt (sad)
+    if (activeBehavior === 'thinking' && headRef.current) {
       headRef.current.rotation.z = Math.sin(time * 0.8) * 0.2;
+      robotRef.current.position.y = Math.sin(time * 0.3) * 0.05; // Slower droop
     }
 
     // Eye blinking

@@ -54,7 +54,7 @@ export const VoiceControls = ({ onVoiceMessage, backendUrl = '/api' }: VoiceCont
     try {
       setIsPlaying(true);
       // Placeholder: Connect to backend /api/tts endpoint
-      const response = await fetch(`${backendUrl}/api/tts`, {
+      const response = await fetch(`${backendUrl}/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),

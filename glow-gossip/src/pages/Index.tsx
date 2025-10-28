@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ChatMessage } from '@/components/ChatMessage';
+import { TypingIndicator } from '@/components/TypingIndicator';
 import { EmotionIndicator } from '@/components/EmotionIndicator';
 import { RobotAvatar } from '@/components/RobotAvatar';
 import { WebcamPreview } from '@/components/WebcamPreview';
@@ -11,8 +12,8 @@ import { MessageInput } from '@/components/MessageInput';
 import { Button } from '@/components/ui/button';
 import { Bot, User, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
-import { api, streamChatMessage, ChatMessagePart, ChatRequest } from '@/services/api';
-import { getLatestEmotion } from '@/services/emotionStorage';
+import { api, streamChatMessage } from '@/services/api';
+import { getLatestEmotion, setEmotion } from '@/services/emotionStorage';
 
 type EmotionState = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'fearful' | 'disgusted';
 type BehaviorState = 'idle' | 'typing' | 'analyzing' | 'explaining' | 'celebrating' | 'thinking';
@@ -39,6 +40,7 @@ const Index = () => {
   const [darkMode, setDarkMode] = useState(true);
   const [robotEmotion, setRobotEmotion] = useState<EmotionState>('neutral');
   const [robotBehavior, setRobotBehavior] = useState<BehaviorState>('idle');
+  const [isDetectionActive, setIsDetectionActive] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Load chat history from localStorage
@@ -51,24 +53,14 @@ const Index = () => {
         console.error('Error loading chat history:', error);
       }
     }
-    // Set initial dark mode state from class
-    setDarkMode(document.documentElement.classList.contains('dark'));
   }, []);
 
   // Save chat history to localStorage
   useEffect(() => {
     if (messages.length > 0) {
-      // Filter out temporary messages before saving (like the streaming placeholder)
-      const savableMessages = messages.filter(msg => msg.id !== 'streaming');
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(savableMessages));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
     }
   }, [messages]);
-
-  // Handle dark mode change
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-  }, [darkMode]);
-
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -80,17 +72,33 @@ const Index = () => {
     document.documentElement.style.fontSize = `${textSize}px`;
   }, [textSize]);
 
-  // Utility to convert current state messages to API history format
-  const getApiHistory = (): ChatMessagePart[] => {
-    return messages
-      .filter(msg => msg.role !== 'system' && msg.id !== 'streaming') // Filter out temporary messages
-      .map(msg => ({
-        role: msg.role === 'assistant' ? 'bot' : 'user',
-        content: msg.content
-      }));
+  const handleEmotionUpdate = (emotion: string, confidence: number) => {
+    setRobotEmotion(emotion as EmotionState);
   };
 
-  // --- Core Message Sending Logic ---
+  const handleStartDetection = async () => {
+    try {
+      await api.startEmotionDetection();
+      setIsDetectionActive(true);
+      toast.success('Emotion detection started');
+    } catch (error) {
+      console.error('Failed to start detection:', error);
+      toast.error('Failed to start emotion detection');
+    }
+  };
+
+  const handleStopDetection = async () => {
+    try {
+      await api.stopEmotionDetection();
+      setIsDetectionActive(false);
+      toast.success('Emotion detection stopped');
+    } catch (error) {
+      console.error('Failed to stop detection:', error);
+      toast.error('Failed to stop emotion detection');
+    }
+  };
+
+  // NEW: Streaming message handler
   const sendMessage = async (content: string) => {
     // Check guest limit
     if (isGuest && !incrementGuestCount()) {
@@ -104,51 +112,37 @@ const Index = () => {
       timestamp: Date.now(),
     };
 
-    // Use current messages state to build history BEFORE adding the new user message
-    const history = getApiHistory();
-
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
-    let emotion: string;
-    
-    // -----------------------------------------------------
-    // ✅ FIX 1: Only get and use emotion if detection is enabled
-    // -----------------------------------------------------
-    if (emotionDetection) {
-        emotion = getLatestEmotion();
-    } else {
-        // If disabled, explicitly use 'neutral'
-        emotion = 'neutral';
-    }
-
+    // Use stored emotion
+    const emotion = getLatestEmotion();
     setRobotEmotion(emotion as EmotionState);
     setRobotBehavior('analyzing');
 
     try {
-      // Pass history array
-      await handleStreamingMessage(content, emotion, history);
+      // Use streaming for real-time response
+      await handleStreamingMessage(content, emotion);
       setRobotBehavior('celebrating');
       setTimeout(() => setRobotBehavior('idle'), 2000);
       
     } catch (error) {
       console.error('Streaming error, falling back to regular chat:', error);
-      // Fallback to non-streaming, passing history and user message
-      await handleRegularMessage(content, emotion, history);
+      // Fallback to non-streaming - emotion is now accessible here
+      await handleRegularMessage(content, emotion);
       setRobotBehavior('idle');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // --- Streaming Message Handler (Groq / SSE) ---
-  const handleStreamingMessage = async (content: string, emotion: string, history: ChatMessagePart[]) => {
+  // NEW: Streaming message handler
+  const handleStreamingMessage = async (content: string, emotion: string) => {
     let fullResponse = '';
     
     // Add typing indicator
-    const typingId = 'typing';
     setMessages((prev) => [...prev, { 
-      id: typingId, 
+      id: 'typing', 
       role: 'assistant', 
       content: '', 
       timestamp: Date.now(),
@@ -156,15 +150,13 @@ const Index = () => {
     }]);
     
     try {
-      // Pass the user's message, emotion, AND the history
-      const stream = await streamChatMessage(content, emotion, [...history, { role: 'user', content }]);
+      const stream = await streamChatMessage(content, emotion);
       
-      // Remove typing indicator and add empty assistant message placeholder
-      const streamingId = 'streaming';
+      // Remove typing indicator and add empty assistant message
       setMessages((prev) => {
-        const newMessages = prev.filter(msg => msg.id !== typingId);
+        const newMessages = prev.filter(msg => msg.id !== 'typing');
         return [...newMessages, { 
-          id: streamingId, 
+          id: 'streaming', 
           role: 'assistant', 
           content: '', 
           timestamp: Date.now(),
@@ -180,24 +172,20 @@ const Index = () => {
           
           // Update the streaming message with new content
           setMessages((prev) => {
-            return prev.map(msg => 
-              msg.id === streamingId
-                ? { 
-                    ...msg, 
-                    content: fullResponse, 
-                    emotion: chunk.emotion_used as EmotionState || emotion, 
-                    provider: chunk.provider || 'streaming' 
-                  }
+            const newMessages = prev.map(msg => 
+              msg.id === 'streaming' 
+                ? { ...msg, content: fullResponse, emotion: chunk.emotion_used || emotion, provider: chunk.provider || 'streaming' }
                 : msg
             );
+            return newMessages;
           });
         }
         
         if (chunk.done) {
           // Convert streaming message to permanent message
           setMessages((prev) => {
-            return prev.map(msg => 
-              msg.id === streamingId
+            const newMessages = prev.map(msg => 
+              msg.id === 'streaming' 
                 ? { 
                     ...msg, 
                     id: Date.now().toString(),
@@ -205,45 +193,40 @@ const Index = () => {
                   }
                 : msg
             );
+            return newMessages;
           });
           break;
         }
       }
     } catch (streamError) {
-      // Remove any lingering indicators before re-throwing
-      setMessages((prev) => prev.filter(msg => msg.id !== typingId && msg.id !== 'streaming'));
-      console.error('Error during streaming:', streamError);
-      toast.error('Stream connection failed. Trying non-streaming fallback.');
-      throw streamError; // Re-throw to trigger handleRegularMessage
+      console.error('Streaming failed:', streamError);
+      throw streamError; // Re-throw to trigger fallback
     }
   };
 
-  // --- Regular Message Handler (Fallback) ---
-  const handleRegularMessage = async (content: string, emotion: string, history: ChatMessagePart[]) => {
+  // NEW: Regular message handler (fallback)
+  const handleRegularMessage = async (content: string, emotion: string) => {
     try {
-      const chatRequest: ChatRequest = {
+      const response = await api.sendChatMessage({
         message: content,
         emotion: emotion,
-        history: [...history, { role: 'user', content }], // Include the new user message
+      });
+      
+    if (response.reply) {
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: response.reply,
+        timestamp: Date.now(),
+        emotion: response.emotion_used,
+        provider: 'api'
       };
-      
-      const response = await api.sendChatMessage(chatRequest);
-      
-      if (response.reply) {
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: response.reply,
-          timestamp: Date.now(),
-          emotion: response.emotion_used as EmotionState,
-          provider: 'api'
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
-      } else {
-        throw new Error('Failed to get response from backend');
+      setMessages((prev) => [...prev, assistantMessage]);
+    } else {
+      throw new Error('Failed to get response from backend');
       }
     } catch (error) {
-      console.error('Error sending message (fallback):', error);
+      console.error('Error sending message:', error);
       toast.error('Failed to send message. Using demo mode.');
       
       // Demo response for when backend is unavailable
@@ -252,7 +235,7 @@ const Index = () => {
         role: 'assistant',
         content: `I received your message: "${content}"\n\n**Demo Mode**: Backend connection unavailable. This is a placeholder response to demonstrate the UI features.\n\n\`\`\`python\n# Example code snippet\ndef hello_world():\n    print("Hello, World!")\n\`\`\``,
         timestamp: Date.now(),
-        emotion: emotion as EmotionState,
+        emotion: emotion,
         provider: 'demo'
       };
       
@@ -262,36 +245,29 @@ const Index = () => {
     }
   };
 
-
   const handleVoiceMessage = async (audioBlob: Blob) => {
     const formData = new FormData();
     formData.append('audio', audioBlob, 'recording.wav');
 
     try {
-      toast.info('Processing voice message...', { duration: 3000 });
       const token = localStorage.getItem('jwt_token');
-      // The API call uses fetch directly, ensuring the Authorization header is handled.
-      // This works because the backend/main.py now handles the /api/voice endpoint.
       const response = await fetch('http://127.0.0.1:8000/api/voice', {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {}, // Pass token here
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
 
       if (!response.ok) {
-        // Voice endpoint returns 503 if all providers fail
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to process voice message');
+        throw new Error('Failed to process voice message');
       }
 
       const data = await response.json();
       if (data.text) {
-        toast.success(`Transcribed: "${data.text}"`);
         sendMessage(data.text);
       }
     } catch (error) {
       console.error('Error processing voice message:', error);
-      toast.error(`Voice processing failed: ${error.message}`);
+      toast.error('Voice processing unavailable');
     }
   };
 
@@ -332,13 +308,18 @@ const Index = () => {
       />
 
       {/* Emotion Indicator */}
-      {/* ----------------------------------------------------- */}
-      {/* ✅ FIX 2: Conditionally render EmotionIndicator */}
-      {/* ----------------------------------------------------- */}
-      <EmotionIndicator enabled={emotionDetection} />
+      <EmotionIndicator 
+        enabled={emotionDetection && isDetectionActive}
+        onEmotionUpdate={handleEmotionUpdate}
+      />
 
       {/* Webcam Preview */}
-      <WebcamPreview enabled={emotionDetection} />
+      <WebcamPreview 
+        enabled={emotionDetection}
+        isActive={isDetectionActive}
+        onStart={handleStartDetection}
+        onStop={handleStopDetection}
+      />
 
       {/* Header */}
       <header className="relative border-b border-border/50 backdrop-blur-xl">
@@ -361,6 +342,15 @@ const Index = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {emotionDetection && (
+                <Button
+                  variant={isDetectionActive ? "destructive" : "default"}
+                  size="sm"
+                  onClick={isDetectionActive ? handleStopDetection : handleStartDetection}
+                >
+                  {isDetectionActive ? 'Stop Detection' : 'Start Detection'}
+                </Button>
+              )}
               <VoiceControls onVoiceMessage={handleVoiceMessage} backendUrl="http://127.0.0.1:8000" />
               <Button
                 variant="ghost"

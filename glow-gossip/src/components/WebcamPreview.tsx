@@ -1,60 +1,17 @@
-// glow-gossip/src/components/WebcamPreview.tsx
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Video, VideoOff, Minimize2, Maximize2 } from 'lucide-react';
 import { Button } from './ui/button';
+import { BACKEND_URL } from '@/services/api';
 
 interface WebcamPreviewProps {
   enabled: boolean;
-  backendUrl?: string;
+  isActive: boolean;
+  onStart: () => void;
+  onStop: () => void;
 }
 
-export const WebcamPreview = ({ enabled, backendUrl = '/video_feed' }: WebcamPreviewProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [isActive, setIsActive] = useState(false);
+export const WebcamPreview = ({ enabled, isActive, onStart, onStop }: WebcamPreviewProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-
-  useEffect(() => {
-    if (enabled && !stream) {
-      startWebcam();
-    } else if (!enabled && stream) {
-      stopWebcam();
-    }
-
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [enabled]);
-
-  const startWebcam = async () => {
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 },
-        audio: false,
-      });
-      setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
-      setIsActive(true);
-    } catch (error) {
-      console.error('Error accessing webcam:', error);
-      setIsActive(false);
-    }
-  };
-
-  const stopWebcam = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    }
-    setIsActive(false);
-  };
 
   if (!enabled) return null;
 
@@ -66,16 +23,22 @@ export const WebcamPreview = ({ enabled, backendUrl = '/video_feed' }: WebcamPre
     >
       <div className="relative w-full h-full">
         {isActive ? (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-          />
+          <>
+            <img
+              src={`${BACKEND_URL}/api/emotion_face/stream`}
+              alt="Live Emotion Stream"
+              className="w-full h-full object-cover"
+            />
+            
+            <div className="absolute top-2 left-2 flex items-center gap-2 bg-red-500/80 text-white px-2 py-1 rounded text-xs">
+              <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+              Camera Active
+            </div>
+          </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted">
+          <div className="w-full h-full flex flex-col items-center justify-center bg-muted gap-2">
             <VideoOff className="w-8 h-8 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">Camera Off</p>
           </div>
         )}
         
@@ -96,13 +59,7 @@ export const WebcamPreview = ({ enabled, backendUrl = '/video_feed' }: WebcamPre
             size="icon"
             variant="secondary"
             className="w-8 h-8 opacity-80 hover:opacity-100"
-            onClick={() => {
-              if (isActive) {
-                stopWebcam();
-              } else {
-                startWebcam();
-              }
-            }}
+            onClick={isActive ? onStop : onStart}
           >
             {isActive ? (
               <VideoOff className="w-4 h-4" />

@@ -47,33 +47,39 @@ async def lifespan(app: FastAPI):
     print("Application Shutdown: Goodbye!")
 executor = ThreadPoolExecutor()
 app = FastAPI(title="Emotion-Aware Coding Assistant", lifespan=lifespan)
-origins = [
-    "http://localhost", "http://localhost:3000", "http://localhost:5173",
-    "http://127.0.0.1", "http://127.0.0.1:3000", "http://127.0.0.1:5173",
-    "http://localhost:8000", "http://127.0.0.1:8000",
-]
-@app.middleware("http")
-async def intercept_options_requests(request: Request, call_next):
-    # ... (Custom OPTIONS middleware as before) ...
-    if request.method == "OPTIONS":
-        logger.info(f"Intercepted OPTIONS request for {request.url.path}, returning 200 OK directly.")
-        headers = { # ... (CORS headers as before) ...
-            "Access-Control-Allow-Origin": request.headers.get("Origin", "*"),
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-            "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers", "*"),
-            "Access-Control-Allow-Credentials": "true", "Access-Control-Max-Age": "86400",
-        }
-        return PlainTextResponse("OK", status_code=status.HTTP_200_OK, headers=headers)
-    response = await call_next(request); return response
-app.add_middleware( # Standard CORS middleware
-    CORSMiddleware, allow_origins=origins, allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], allow_headers=["*"],
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "https://lovable.app",
+        "https://*.lovable.app",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-app.include_router(auth.router)
-app.include_router(emotion_face.router)
-app.include_router(profile.router)
-app.include_router(emotion_text.router)
-app.include_router(text_to_speech.router)
+@app.options("/{full_path:path}")
+async def preflight_handler(full_path: str, request: Request):
+    """Handle CORS preflight for any route (including /api/register)"""
+    logger.info(f"Global OPTIONS handler caught: {request.url.path}")
+    headers = {
+        "Access-Control-Allow-Origin": request.headers.get("Origin", "*"),
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+        "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers", "*"),
+        "Access-Control-Allow-Credentials": "true",
+    }
+    return Response(status_code=status.HTTP_200_OK, headers=headers)
+
+app.include_router(auth.router, prefix="/api")
+app.include_router(emotion_face.router, prefix="/api")
+app.include_router(profile.router, prefix="/api")
+app.include_router(emotion_text.router, prefix="/api")
+app.include_router(text_to_speech.router, prefix="/api")
 @app.get("/")
 def read_root(): return {"message": "Emotion-Aware Coding Assistant Backend is running."}
 
