@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Video, VideoOff, Minimize2, Maximize2 } from 'lucide-react';
 import { Button } from './ui/button';
-import { BACKEND_URL } from '@/services/api';
+// ✅ Corrected import name: API_BASE_URL
+import { API_BASE_URL } from '@/services/api';
 
 interface WebcamPreviewProps {
   enabled: boolean;
@@ -25,11 +26,18 @@ export const WebcamPreview = ({ enabled, isActive, onStart, onStop }: WebcamPrev
         {isActive ? (
           <>
             <img
-              src={`${BACKEND_URL}/api/emotion_face/stream`}
+              // ✅ Corrected variable name: API_BASE_URL
+              src={`${API_BASE_URL}/video_feed`} // Corrected endpoint path based on emotion_face.py
               alt="Live Emotion Stream"
               className="w-full h-full object-cover"
+              // Add error handling for the image stream
+              onError={(e) => {
+                  console.error("Error loading video stream:", e);
+                  // Optionally display a placeholder or message
+                  (e.target as HTMLImageElement).style.display = 'none'; // Hide broken image
+              }}
             />
-            
+
             <div className="absolute top-2 left-2 flex items-center gap-2 bg-red-500/80 text-white px-2 py-1 rounded text-xs">
               <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
               Camera Active
@@ -41,7 +49,7 @@ export const WebcamPreview = ({ enabled, isActive, onStart, onStop }: WebcamPrev
             <p className="text-xs text-muted-foreground">Camera Off</p>
           </div>
         )}
-        
+
         <div className="absolute top-2 right-2 flex gap-2">
           <Button
             size="icon"

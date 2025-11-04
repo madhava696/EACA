@@ -16,7 +16,7 @@ import re
 from backend.deps import get_current_user
 
 # ✅ DEFINE ROUTER HERE
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 logger = logging.getLogger("backend.auth")
 

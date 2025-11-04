@@ -8,7 +8,7 @@ from backend.models.user import User
 from backend.services.auth_service import hash_password, hash_secret_key
 from sqlalchemy.future import select
 
-router = APIRouter(prefix="/api", tags=["profile"])
+router = APIRouter(prefix="/api/auth", tags=["profile"])
 
 class UpdateProfile(BaseModel):
     email: EmailStr | None = None

@@ -1,3 +1,5 @@
+"use client";
+
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { api, UserProfile } from '@/services/api';
 import { toast } from 'sonner';
@@ -21,7 +23,7 @@ const GUEST_MESSAGE_LIMIT = 20;
 const GUEST_COUNT_KEY = 'guest_message_count';
 const JWT_TOKEN_KEY = 'jwt_token';
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   const [guestMessageCount, setGuestMessageCount] = useState(0);
@@ -48,9 +50,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (error) {
           console.error('Auth init error:', error);
           localStorage.removeItem(JWT_TOKEN_KEY);
-        }
+        }finally{
         setIsLoading(false);
-      } else {
+      }
+    } else {
         setIsLoading(false);
       }
     };
@@ -58,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth();
   }, []);
 
-  const login = async (email: string, password: string, secretKey: string): Promise<boolean> => {
+  const login = async (email: string, password: string, secretKey: string) => {
     try {
       const response = await api.login({ email, password, secret_key: secretKey });
       
@@ -100,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     localStorage.removeItem(JWT_TOKEN_KEY);
-    localStorage.removeItem('guest_mode');
+    localStorage.removeItem("guest_mode");
     localStorage.removeItem(GUEST_COUNT_KEY);
     setUser(null);
     setIsGuest(false);
