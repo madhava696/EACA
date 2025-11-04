@@ -32,7 +32,7 @@ from backend.utils.clients import get_groq_client
 ssl._create_default_https_context = ssl._create_unverified_context
 
 # Initialize FastAPI app
-app = FastAPI(title="Emotion-Aware Coding Assistant", lifespan=lifespan)
+app = FastAPI()
 
 @app.get("/health")
 def health_check():
