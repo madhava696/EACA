@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "glow-gossip/package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "dist" }
+    }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "glow-gossip/dist/$1" }
+  ],
+  "ignoreCommand": "echo 'Ignoring backend folder'",
+  "outputDirectory": "glow-gossip/dist"
+}
