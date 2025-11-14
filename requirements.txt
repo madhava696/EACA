@@ -140,8 +140,8 @@ termcolor==3.1.0
 threadpoolctl==3.6.0
 tokenizers==0.22.1
 tomli==2.3.0
-torch==2.2.2+cpu
-torchvision==0.17.2+cpu
+torch==2.2.2
+torchvision==0.17.2
 tqdm==4.67.1
 transformers==4.57.1
 twine==6.2.0
