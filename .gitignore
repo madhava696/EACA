@@ -1,19 +1,51 @@
-# Ignore Python cache
+# -----------------------------
+# Python & Backend
+# -----------------------------
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.sqlite3
+dev.db
 
-# Ignore virtual environment
+# Virtual environments
 venv/
 env/
-backend/.env
-backend/.env.examples
-# Ignore VSCode settings
-.vscode/
+.venv/
 
-# Ignore logs
+# Environment files
+.env
+backend/.env
+backend/.env.example
+backend/.env.examples
+
+# Logs
 *.log
 
-# Ignore OS-specific files
+# -----------------------------
+# Node / Frontend (Lovable)
+# -----------------------------
+node_modules/
+dist/
+build/
+
+# Vite
+.vite/
+
+# -----------------------------
+# IDE / Editor
+# -----------------------------
+.vscode/
+.idea/
+
+# -----------------------------
+# OS-specific
+# -----------------------------
 .DS_Store
 Thumbs.db
 
+# -----------------------------
+# Others
+# -----------------------------
+*.bak
+*.tmp
